@@ -4,13 +4,60 @@
 <meta charset="UTF-8">
 <title>Configurar contraseña</title>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
+  body {
+    background: linear-gradient(135deg, #74ebd5, #ACB6E5);
+    height: 100vh;
+    display: flex; justify-content: center; align-items: center;
+  }
+  .container {
+    background: #fff;
+    padding: 40px 50px;
+    border-radius: 15px;
+    box-shadow: 0 15px 25px rgba(0,0,0,0.2);
+    width: 350px;
+    text-align: center;
+  }
+  h2 { color: #333; margin-bottom: 25px; font-size: 1.8em; }
+  input[type="password"] {
+    width: 100%; padding: 12px 15px; margin: 10px 0; border: 1px solid #ccc; border-radius: 8px;
+    outline: none; transition: 0.3s;
+  }
+  input[type="password"]:focus { border-color: #74ebd5; box-shadow: 0 0 8px rgba(116,235,213,0.4); }
+  button {
+    width: 100%; padding: 12px; background: #74ebd5; border: none; border-radius: 8px;
+    color: #fff; font-size: 1em; cursor: pointer; transition: 0.3s; margin-top: 15px;
+  }
+  button:hover { background: #67d9c6; }
+  .message { margin-top: 15px; font-size: 0.95em; color: #e74c3c; min-height: 20px; text-align: left; }
+  .message.success { color: #27ae60; }
+  .criteria {
+    font-size: 0.85em;
+    margin-top: 5px;
+    text-align: left;
+    color: #e74c3c;
+  }
+  .criteria.valid { color: #27ae60; }
+  .criteria span { display: block; }
+</style>
 </head>
 <body>
-<h2>Establecer contraseña</h2>
-<input type="password" id="password" placeholder="Nueva contraseña">
-<input type="password" id="confirmPassword" placeholder="Confirmar contraseña">
-<button id="saveBtn">Guardar</button>
-<p id="message"></p>
+<div class="container">
+  <h2>Establecer contraseña</h2>
+  <input type="password" id="password" placeholder="Nueva contraseña">
+  <div class="criteria" id="criteria">
+    <span id="length">Mínimo 8 caracteres</span>
+    <span id="lower">Al menos una letra minúscula</span>
+    <span id="upper">Al menos una letra mayúscula</span>
+    <span id="number">Al menos un número</span>
+    <span id="symbol">Al menos un símbolo (!@#$...)</span>
+  </div>
+  <input type="password" id="confirmPassword" placeholder="Confirmar contraseña">
+  <div class="criteria" id="match"></div>
+  <button id="saveBtn">Guardar</button>
+  <p class="message" id="message"></p>
+</div>
 
 <script>
   const supabaseUrl = "https://wptspqcmjstvuwugcepu.supabase.co";
@@ -18,9 +65,19 @@
   const supabase = window.supabase.createClient(supabaseUrl, supabaseKey);
 
   const message = document.getElementById("message");
+  const passwordInput = document.getElementById("password");
+  const confirmInput = document.getElementById("confirmPassword");
 
-  // 1️⃣ Leer el hash de la URL
-  const hash = window.location.hash.substring(1); // quita el '#'
+  const criteria = {
+    length: document.getElementById("length"),
+    lower: document.getElementById("lower"),
+    upper: document.getElementById("upper"),
+    number: document.getElementById("number"),
+    symbol: document.getElementById("symbol")
+  };
+  const matchMsg = document.getElementById("match");
+
+  const hash = window.location.hash.substring(1);
   const params = new URLSearchParams(hash);
   const access_token = params.get('access_token');
 
@@ -28,39 +85,58 @@
     message.textContent = "Enlace inválido o expirado.";
     document.getElementById("saveBtn").disabled = true;
   } else {
-    // 2️⃣ Iniciar sesión temporal con Supabase
     supabase.auth.setSession({
       access_token: access_token,
       refresh_token: params.get('refresh_token')
     });
   }
 
-  // 3️⃣ Cambiar contraseña
-  document.getElementById("saveBtn").addEventListener("click", async () => {
-    const password = document.getElementById("password").value;
-    const confirmPassword = document.getElementById("confirmPassword").value;
+  // Validación en tiempo real
+  passwordInput.addEventListener("input", () => {
+    const val = passwordInput.value;
+    criteria.length.classList.toggle('valid', val.length >= 8);
+    criteria.lower.classList.toggle('valid', /[a-z]/.test(val));
+    criteria.upper.classList.toggle('valid', /[A-Z]/.test(val));
+    criteria.number.classList.toggle('valid', /\d/.test(val));
+    criteria.symbol.classList.toggle('valid', /[\W_]/.test(val));
+  });
 
-    // Validación
+  confirmInput.addEventListener("input", () => {
+    matchMsg.textContent = confirmInput.value === passwordInput.value ? "Las contraseñas coinciden" : "Las contraseñas no coinciden";
+    matchMsg.className = confirmInput.value === passwordInput.value ? "criteria valid" : "criteria";
+  });
+
+  document.getElementById("saveBtn").addEventListener("click", async () => {
+    const password = passwordInput.value;
+    const confirmPassword = confirmInput.value;
+
+    if (!password || !confirmPassword) {
+      message.textContent = "Complete todos los campos.";
+      message.classList.remove('success');
+      return;
+    }
+
     const regex = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[\W_]).{8,}$/;
     if (!regex.test(password)) {
-      message.textContent = "Debe tener mínimo 8 caracteres, mayúscula, minúscula, número y símbolo.";
+      message.textContent = "Contraseña no cumple los criterios.";
+      message.classList.remove('success');
       return;
     }
 
     if (password !== confirmPassword) {
       message.textContent = "Las contraseñas no coinciden.";
+      message.classList.remove('success');
       return;
     }
 
-    // 4️⃣ Actualizar contraseña
     const { data: user, error } = await supabase.auth.updateUser({ password });
 
     if (error) {
       message.textContent = "Error: " + error.message;
+      message.classList.remove('success');
     } else {
       message.textContent = "Contraseña configurada correctamente.";
-      // Opcional: cerrar sesión
-      // await supabase.auth.signOut();
+      message.classList.add('success');
     }
   });
 </script>
